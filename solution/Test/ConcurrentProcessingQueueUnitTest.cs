@@ -80,4 +80,33 @@ public class ConcurrentProcessingQueueUnitTest
             Assert.AreEqual(10, exitCount);
         }
     }
+
+    [TestMethod]
+    [Timeout(2000)]
+    public async Task FullQueueBlocks()
+    {
+        CancellationTokenSource cts = new();
+
+        await using(var cpq = new ConcurrentProcessingQueue<int>(2, 2, async (item, ct) =>
+        {
+            await Task.Delay(1000000, ct);
+        }, cts.Token))
+        {
+            // enqueueing will block so spawn a task for it
+            var enqueueTask = Task.Run(async () =>
+            {
+                for(int t = 0; t < 5; t++)
+                {
+                    await cpq.Enqueue(t);
+                }
+            });
+
+            await Task.Delay(500);
+            Assert.IsFalse(enqueueTask.IsCompleted);    // should be blocked
+
+            cts.Cancel();
+
+            await Assert.ThrowsExceptionAsync<OperationCanceledException>(async () => { await enqueueTask; });
+        }
+    }
 }
